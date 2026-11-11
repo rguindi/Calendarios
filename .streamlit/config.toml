@@ -1,0 +1,10 @@
+# Configuración temática (Streamlit), paleta sanitaria "verde quirófano".
+# El tema base se define aquí y el CSS fino se inyecta desde app.py.
+
+[theme]
+base = "light"
+primaryColor = "#00897B"
+backgroundColor = "#F2F8F6"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#17332F"
+font = "sans serif"
