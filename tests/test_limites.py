@@ -218,9 +218,12 @@ class TestAreaProporcional(unittest.TestCase):
 
     def test_golden_proporcional(self):
         _, _, _, cats = self._reparto(11, 3, 2, 880, 1460)
+        # Tolerancia 4 (no 3) en este fixture de 2 festivos: la regla de
+        # festivos especiales añade una celda de bolsa y desplaza el reparto
+        # del área. El golden real de 2027 sigue en diferencia 0.
         for clave in ("S", "D", "V", "J", "F", "LMX"):
             valores = [c.get(clave, 0) for c in cats.values()]
-            self.assertLessEqual(max(valores) - min(valores), 3,
+            self.assertLessEqual(max(valores) - min(valores), 4,
                                  f"{clave} desequilibrado: {valores}")
 
     def test_validador_detecta_desequilibrio(self):
@@ -276,6 +279,56 @@ class TestValidarContrato(unittest.TestCase):
         r = procesar(self.BASE)
         self.assertTrue(r.ok)
         self.assertTrue(r.contenido.startswith(b"PK"))   # xlsx zip
+
+
+class TestFestivosEspeciales(unittest.TestCase):
+    """R11/R12b/R12c: Navidad y Semana Santa se reparten aparte."""
+
+    # 2027: Semana Santa = jueves 25 y viernes 26 de marzo
+    FEST = ["2027-01-01", "2027-03-25", "2027-03-26", "2027-12-25"]
+
+    def test_equipo_nunca_hace_navidad_y_semana_santa(self):
+        cal, asign, err, _ = run(2027, self.FEST, 11, 3, 2, 880)
+        self.assertEqual(err, "")
+        for nombre, fechas in asign.equipo.items():
+            grupos = {cal.por_fecha(datetime.date.fromisoformat(f)).grupo_especial
+                      for f in fechas}
+            grupos.discard(None)
+            self.assertLessEqual(len(grupos), 1, f"{nombre} hace ambos grupos")
+
+    def test_mitad_equipo_mitad_area_con_dos_modulos(self):
+        cal, asign, err, _ = run(2027, self.FEST, 11, 3, 2, 880)
+        self.assertEqual(err, "")
+        for dd in cal.dias:
+            if dd.grupo_especial is None:
+                continue
+            n_eq = sum(dd.fecha.isoformat() in fs for fs in asign.equipo.values())
+            n_ar = sum(dd.fecha.isoformat() in fs for fs in asign.area.values())
+            self.assertEqual((n_eq, n_ar), (1, 1), dd.fecha)
+
+    def test_un_modulo_alterna_equipo_y_area(self):
+        cal = Calendario(2027, [datetime.date.fromisoformat(x) for x in self.FEST])
+        celdas = cal.celdas_equipo_especiales(1)
+        for dd in cal.dias:
+            if dd.grupo_especial is None:
+                continue
+            self.assertIn(celdas[dd.fecha], (0, 1), dd.fecha)
+            if dd.weekday in (5, 3):                  # sábado y jueves: siempre equipo
+                self.assertEqual(celdas[dd.fecha], 1, dd.fecha)
+        por_grupo = {"NAV": [], "SS": []}
+        for dd in cal.dias:
+            if dd.grupo_especial and dd.weekday not in (5, 3):
+                por_grupo[dd.grupo_especial].append(celdas[dd.fecha])
+        for grupo, valores in por_grupo.items():
+            self.assertTrue(all(a != b for a, b in zip(valores, valores[1:])), grupo)
+
+    def test_validar_rechaza_menos_de_minimos(self):
+        base = {"anio": 2027, "enfermeras": 4, "enfermeras_area": 1,
+                "modulos_guardia": 2, "horas_equipo": 880, "horas_area": 1460,
+                "festivos": []}
+        self.assertIsNone(validar(base))
+        self.assertIn("al menos 4", validar({**base, "enfermeras": 3}))
+        self.assertIn("al menos 1", validar({**base, "enfermeras_area": 0}))
 
 
 if __name__ == "__main__":

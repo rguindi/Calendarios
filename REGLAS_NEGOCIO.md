@@ -4,16 +4,18 @@
 > cambios concretos: *"modifica la R7"*.
 >
 > **Rev. 2 — 10/11/2026:** R6, R13, R14, R17, R21 y R23 ajustadas tras reunión con el cliente.
+> **Rev. 3:** R1 y R2 con mínimos (4 de equipo, 1 de área); R11 y R12 con los festivos especiales
+> (Navidad y Semana Santa repartidos aparte).
 
 ---
 
 ## 1. Datos que se piden en el formulario
 
-- **R1.** Nº de enfermeras de equipo. Se les asignan letras: A, B, C, D…
-- **R2.** Nº de enfermeras de área. Se les asigna: R1, R2, R3…
+- **R1.** Nº de enfermeras de equipo (**mínimo 4**). Se les asignan letras: A, B, C, D…
+- **R2.** Nº de enfermeras de área (**mínimo 1**). Se les asigna: R1, R2, R3…
 - **R3.** Módulos de guardia: **1 o 2**. Es el número de personas de guardia el mismo día.
-- **R4.** Horas objetivo por enfermera de equipo.
-- **R5.** Horas objetivo por enfermera de área.
+- **R4.** Horas objetivo por enfermera de equipo (**mínimo 1**).
+- **R5.** Horas objetivo por enfermera de área (**mínimo 1**).
 - **R6.** El formulario incluye el **año** del calendario (por defecto, **el siguiente al
   actual**). Los festivos nacionales y autonómicos de ese año se precargan
   automáticamente, y el usuario añade los **festivos locales**; el conjunto de ambos es
@@ -35,12 +37,19 @@ El calendario se genera para **cualquier año**.
 
 ## 3. Festivos especiales
 
-- **R11.** Son festivos especiales: **1 de enero**, **24, 25 y 31 de diciembre** y los
-  cuatro días de **Semana Santa** (jueves, viernes, sábado y domingo de Pascua).
-  Las fechas de Semana Santa cambian cada año y se calculan automáticamente.
-- **R12.** De cada festivo (especial o no), **la mitad de las guardias son para el equipo
+- **R11.** Son festivos especiales: **1 de enero**, **24, 25 y 31 de diciembre** y el
+  **jueves y viernes santo** (Semana Santa). Las fechas cambian cada año y se calculan
+  automáticamente. Sábado y domingo de Pascua **no** son especiales.
+- **R12.** De cada festivo **no especial**, **la mitad de las guardias son para el equipo
   y la otra mitad para el área**. Si hay un solo módulo de guardia, los festivos se
   alternan entre equipo y área.
+- **R12b.** Los festivos especiales se reparten **aparte** de los demás: **la mitad para el
+  equipo y la mitad para el área**. Con un solo módulo, equipo y área se alternan por día,
+  empezando por el equipo; los sábados y jueves de especial son siempre del equipo.
+- **R12c.** Las enfermeras de equipo se dividen en dos grupos fijos: **Navidad** y **Semana
+  Santa**. Un miembro del equipo hace **uno u otro** grupo, nunca ambos. Un miembro de área
+  puede hacer **los dos**. El reparto entre grupos es **aleatorio**, mitad y mitad (con
+  semilla fija por año, así el mismo formulario genera siempre el mismo calendario).
 
 ---
 
@@ -111,5 +120,4 @@ El calendario se genera para **cualquier año**.
 
 *Para pedir un cambio, indique el código de la regla. Ejemplo: "la R17 quiero que avise
 en rojo en lugar de informar del desvío".*
-
 

@@ -154,6 +154,15 @@ class Solver:
         self.area = [f"R{i + 1}" for i in range(n_area)]
         self.eq: dict[str, Estado] = {n: Estado() for n in self.equipo}
         self.ar: dict[str, Estado] = {n: Estado() for n in self.area}
+        # R12: cada enfermera de equipo trabaja UN solo grupo de festivos
+        # especiales (NAV = 1/1, 24, 25, 31/12; SS = Semana Santa). Reparto
+        # aleatorio, mitad y mitad, con semilla fija por año.
+        orden_grupos = list(self.equipo)
+        random.Random(f"grupos-{cal.anio}").shuffle(orden_grupos)
+        mitad = (len(orden_grupos) + 1) // 2
+        self.grupo_nurse: dict[str, str] = {
+            n: ("NAV" if i < mitad else "SS") for i, n in enumerate(orden_grupos)}
+        self.plan_eq: dict[datetime.date, int] = cal.celdas_equipo_especiales(modulos)
 
         # celdas por fecha: lista de `modulos` casillas None ('eq', n) / ('ar', n)
         self.celdas: dict[datetime.date, list[tuple[str, str] | None]] = {
@@ -175,6 +184,31 @@ class Solver:
 
     def hueco(self, fecha: datetime.date) -> bool:
         return any(v is None for v in self.celdas[fecha])
+
+    def eq_permitidas(self, dia: Dia) -> int:
+        """Celdas de EQUIPO del día: m; en festivos especiales, el reparto
+        mitad/mitad del plan (R12)."""
+        if dia.grupo_especial is not None:
+            return self.plan_eq[dia.fecha]
+        return self.modulos
+
+    def area_max(self, dia: Dia) -> int:
+        """Celdas de ÁREA admisibles: en especiales, las que no son de equipo."""
+        if dia.grupo_especial is not None:
+            return self.modulos - self.plan_eq[dia.fecha]
+        return self.modulos
+
+    def cabe_eq(self, dia: Dia) -> bool:
+        return len(self.equipo_en_dia(dia.fecha)) < self.eq_permitidas(dia)
+
+    def grupo_ok(self, nombre: str, dia: Dia) -> bool:
+        """R12: una enfermera de equipo solo trabaja especiales de su grupo."""
+        return dia.grupo_especial is None or self.grupo_nurse[nombre] == dia.grupo_especial
+
+    def puede_eq(self, nombre: str, dia: Dia) -> bool:
+        return (self.cabe_eq(dia) and self.grupo_ok(nombre, dia)
+                and nombre not in self.equipo_en_dia(dia.fecha)
+                and libre(self.eq, nombre, dia.fecha))
 
     # -- F4a: parejas sábado → jueves +5 ------------------------------------
     def parejas(self) -> None:
@@ -198,16 +232,17 @@ class Solver:
             jt = sat + datetime.timedelta(days=5)
             if jt > fin:
                 continue
+            dia_jt = self.cal.por_fecha(jt)
             k = 2 if i in con_doble_fmt else 1
-            k = min(k, self.modulos)
+            k = min(k, self.modulos, self.eq_permitidas(dd), self.eq_permitidas(dia_jt))
             cands = [n for n in self.equipo
                      if self.eq[n].cont["S"] < self.cuotas.sabados
-                     and libre(self.eq, n, sat) and libre(self.eq, n, jt)]
+                     and self.puede_eq(n, dd) and self.puede_eq(n, dia_jt)]
             cands.sort(key=lambda n: (self.eq[n].cont["S"], self.eq[n].total, n))
             for n in cands[:k]:
                 self.put("eq", n, sat)
                 self.put("eq", n, jt)
-                if self.cal.por_fecha(jt).festivo:
+                if dia_jt.festivo:
                     jueves_fest[n] = jueves_fest.get(n, 0) + 1
 
         self.parejas_reparacion(pool)
@@ -227,7 +262,9 @@ class Solver:
                     if (s > fin or s in sats_propios or s in self.eq[n].fechas
                             or jt > fin or jt in self.eq[n].fechas):
                         continue
-                    if self.hueco(s) and self.hueco(jt):
+                    dj = self.cal.por_fecha(jt)
+                    if (self.cabe_eq(dd) and self.cabe_eq(dj)
+                            and self.grupo_ok(n, dd) and self.grupo_ok(n, dj)):
                         libres.append(dd)
                 if not libres:
                     break
@@ -250,8 +287,7 @@ class Solver:
             for _ in range(cuantos):
                 if self.eq[n].cont["J"] >= self.cuotas.jueves:
                     break
-                cands = [dd for dd in orden
-                         if self.hueco(dd.fecha) and libre(self.eq, n, dd.fecha)]
+                cands = [dd for dd in orden if self.puede_eq(n, dd)]
                 if not cands:
                     break
 
@@ -267,15 +303,24 @@ class Solver:
                 self.put("eq", n, dd.fecha)
 
     # -- F4b: resto de categorías -------------------------------------------
-    def permitidas_equipo(self, dia: Dia) -> int:
-        """Máximo de celdas de EQUIPO ese día: m; los festivos especiales son
-        mitad/mitad → 1 (§3.4)."""
-        if dia.especial:
-            return 1
-        return self.modulos
+    def especiales(self) -> None:
+        """Festivos especiales (R11/R12): cada celda de equipo asignada según el
+        plan mitad/mitad. Va tras las parejas, para que sus sábados y jueves
+        ya estén cubiertos, y antes del resto de categorías."""
+        dias = [dd for dd in self.cal.dias_de("F") if dd.grupo_especial is not None]
+        self.rng.shuffle(dias)
+        for dd in dias:
+            while len(self.equipo_en_dia(dd.fecha)) < self.eq_permitidas(dd):
+                cands = [n for n in self.equipo if self.puede_eq(n, dd)]
+                if not cands:
+                    break
+                # equilibrio: primero quien tenga menos festivos especiales
+                minimo = min(self.n_especiales(self.eq[n].fechas) for n in cands)
+                cands = [n for n in cands
+                         if self.n_especiales(self.eq[n].fechas) == minimo]
+                self.put("eq", elegir(cands, self.eq, "F", dd.fecha), dd.fecha)
 
-    def rellenar(self, clave: str, dias: list[Dia], metas: dict[str, int],
-                 paridad_m1: bool = False) -> None:
+    def rellenar(self, clave: str, dias: list[Dia], metas: dict[str, int]) -> None:
         """Asigna 1 guardia por día (más 'dobles' repartidas uniformemente,
         heurística del modelo 2027) respetando metas por enfermera, celdas
         permitidas, bloqueos 72 h y no-consecutividad. Termina con una pasada
@@ -290,24 +335,19 @@ class Solver:
         dias = list(dias)
         self.rng.shuffle(dias)                  # reparte las celdas sin cubrir
         for i, dd in enumerate(dias):
-            if paridad_m1 and i % 2 == 1:
-                continue                      # festivos alternos empezando por equipo
-            permitidas = min(self.permitidas_equipo(dd), self.modulos)
             k = 1 + (1 if i in con_doble else 0)
             for _ in range(k):
-                if len(self.equipo_en_dia(dd.fecha)) >= permitidas:
+                if not self.cabe_eq(dd):
                     break
                 cands = [n for n in self.equipo
                          if self.eq[n].cont[clave] < metas.get(n, 0)
-                         and libre(self.eq, n, dd.fecha)
-                         and n not in self.equipo_en_dia(dd.fecha)]
+                         and self.puede_eq(n, dd)]
                 if not cands:
                     break
                 self.put("eq", elegir(cands, self.eq, clave, dd.fecha), dd.fecha)
-        self.reparar(clave, dias, metas, paridad_m1=paridad_m1)
+        self.reparar(clave, dias, metas)
 
-    def reparar(self, clave: str, dias: list[Dia], metas: dict[str, int],
-                paridad_m1: bool = False) -> None:
+    def reparar(self, clave: str, dias: list[Dia], metas: dict[str, int]) -> None:
         """Enfermeras con meta pendiente: completarlas en días con hueco de
         equipo (mayor déficit primero). Se detiene si no hay progreso."""
         for _ in range(4 * len(dias) + 8):
@@ -321,12 +361,7 @@ class Solver:
             for n in faltanos:
                 colocado = False
                 for dd in dias:
-                    if len(self.equipo_en_dia(dd.fecha)) >= min(
-                            self.permitidas_equipo(dd), self.modulos):
-                        continue
-                    if n in self.equipo_en_dia(dd.fecha):
-                        continue
-                    if not libre(self.eq, n, dd.fecha):
+                    if not self.puede_eq(n, dd):
                         continue
                     self.put("eq", n, dd.fecha)
                     colocado = True
@@ -343,13 +378,19 @@ class Solver:
                       {n: self.cuotas.domingos for n in self.equipo})
         self.rellenar("V", self.cal.dias_de("V"),
                       {n: self.cuotas.viernes for n in self.equipo})
-        self.rellenar("F", self.cal.dias_de("F"), metas_festivos(self),
-                      paridad_m1=(self.modulos == 1))
+        self.rellenar("F", [dd for dd in self.cal.dias_de("F")
+                            if dd.grupo_especial is None],
+                      metas_festivos(self))
         self.rellenar("LMX", self.cal.dias_de("LMX"), metas_lmx(self))
 
     def libres_en(self, fecha: datetime.date) -> int:
         """Celdas sin nadie (equipo ni área) ese día."""
         return sum(1 for v in self.celdas[fecha] if v is None)
+
+    def n_especiales(self, fechas: set[datetime.date]) -> int:
+        """Festivos especiales en un conjunto de guardias (para equilibrar)."""
+        return sum(1 for f in fechas
+                   if self.cal.por_fecha(f).grupo_especial is not None)
 
     # -- F5: área ------------------------------------------------------------
     def _pasada_area(self, dd: Dia, tope: int, dejar: int = 0) -> None:
@@ -361,7 +402,9 @@ class Solver:
         reserva celdas para la bolsa («Vacío»)."""
         ocupadas = self.area_en_dia(dd.fecha)
         # celdas libres para el área hoy, menos las reservadas para la bolsa
-        cupo = max(0, self.libres_en(dd.fecha) - dejar)
+        # y sin superar el tope de área del día (festivos especiales)
+        cupo = max(0, min(self.libres_en(dd.fecha) - dejar,
+                          self.area_max(dd) - len(ocupadas)))
         for _ in range(cupo):
             if not self.hueco(dd.fecha):
                 break
@@ -378,9 +421,10 @@ class Solver:
             if not cands:
                 break
             cat = categoria_dia(dd)
-            a = min(cands, key=lambda x: (self.ar[x].cont[cat],
-                                          self.ar[x].horas,
-                                          self.ar[x].total, x))
+            especial = dd.grupo_especial is not None
+            a = min(cands, key=lambda x: (
+                self.n_especiales(self.ar[x].fechas) if especial else 0,
+                self.ar[x].cont[cat], self.ar[x].horas, self.ar[x].total, x))
             self.put("ar", a, dd.fecha)
             ocupadas.append(a)            # evita duplicar en el mismo día
 
@@ -412,6 +456,9 @@ class Solver:
         # de bolsa seguidos.
         orden = list(dias)
         self.rng.shuffle(orden)
+        # los festivos especiales van primero: son pocos y el equilibrio
+        # entre áreas depende de asignarlos antes de que se bloqueen
+        orden.sort(key=lambda dd: dd.grupo_especial is None)
         pend = f_total - cubiertas_sonda          # celdas que quedará sin cubrir
         mejor = None                              # ((pares, bolsa), instantánea)
         for _ in range(3):
@@ -462,6 +509,10 @@ class Solver:
         vecinos quedan cubiertos, para no crear un par nuevo) y toma
         `objetivo`. Devuelve True si lo logra."""
         da = self.cal.por_fecha(objetivo)
+        if not self.hueco(objetivo):
+            return False                      # ya no queda celda libre
+        if len(self.area_en_dia(objetivo)) >= self.area_max(da):
+            return False                      # tope de área del día (R12)
         cat_obj = categoria_dia(da)
         bolsa_antes = {f for f, v in self.celdas.items()
                        if any(c is None for c in v)}
@@ -498,10 +549,20 @@ class Solver:
                 cont_nuevo[n][cat_obj] += 1
                 if reparto_proporcional(cont_nuevo):
                     otras.append((st.cont[cat_x], n, x))
+        def clave(p: tuple[str, datetime.date]) -> int:
+            """Especiales de la enfermera tras ceder `x` (equilibrio)."""
+            n, x = p
+            return (self.n_especiales(self.ar[n].fechas)
+                    - (1 if self.cal.por_fecha(x).grupo_especial else 0))
+
         if misma_cat:
-            n, x = misma_cat[0]
+            n, x = (min(misma_cat, key=clave) if da.grupo_especial
+                    else misma_cat[0])
         elif otras:
-            _, n, x = max(otras)
+            if da.grupo_especial:
+                _, n, x = min(otras, key=lambda t: clave((t[1], t[2])))
+            else:
+                _, n, x = max(otras)
         else:
             return False
         self._quitar_guardia(n, x)
@@ -595,6 +656,7 @@ class Solver:
     def resolver(self) -> Asignacion:
         if self.n_equipo:
             self.parejas()
+            self.especiales()
             self.resto_categorias()
         self.rellenar_area()
         return self._asignacion()

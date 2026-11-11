@@ -11,12 +11,14 @@ añadir/quitar campos no requiere tocar este archivo.
 """
 
 from datetime import date
+from pathlib import Path
 
 import streamlit as st
 
 from config.parametros import CAMPOS_NUMERICOS, CAMPO_FESTIVOS
 from logica.excel_logica import procesar
 
+RAIZ = Path(__file__).resolve().parent
 hoy = date.today()
 
 # ---------------------------------------------------------------------------
@@ -153,6 +155,21 @@ st.caption(CAMPO_FESTIVOS.ayuda)
 if st.button("➕ Añadir festivo", use_container_width=True):
     festivos.append(date(hoy.year, 1, 1))
     st.rerun()
+
+# ---------------------------------------------------------------------------
+# Condiciones de negocio (referencia)
+# ---------------------------------------------------------------------------
+
+REGLAS_PATH = RAIZ / "REGLAS_NEGOCIO.md"
+
+
+@st.dialog("Condiciones de negocio aplicadas", width="large")
+def mostrar_condiciones() -> None:
+    st.markdown(REGLAS_PATH.read_text(encoding="utf-8"))
+
+
+if st.button("📋 Ver condiciones de negocio", use_container_width=True):
+    mostrar_condiciones()
 
 # ---------------------------------------------------------------------------
 # Envío

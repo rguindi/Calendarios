@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Golden 2027 (§7/§9.1): la entrada del formulario regenera la asignación
-congelada en `referencia/golden_2027_rev2.json` y cumple los invariantes Rev. 2."""
+congelada en `referencia/golden_2027_rev5.json` y cumple los invariantes Rev. 2."""
 
 import datetime
 import json
@@ -19,7 +19,7 @@ from logica.verificar_libro import verificar_libro            # noqa: E402
 from logica.generador import GeneradorExcel                   # noqa: E402
 from logica.excel_logica import procesar                      # noqa: E402
 
-GOLDEN = json.loads((RAIZ / "referencia" / "golden_2027_rev2.json").read_text())
+GOLDEN = json.loads((RAIZ / "referencia" / "golden_2027_rev5.json").read_text())
 ENTRADA = dict(GOLDEN["entrada"])
 ENTRADA["anio"] = GOLDEN["anio"]
 
@@ -95,8 +95,8 @@ class TestGolden2027(unittest.TestCase):
         horas = [sum(self.cal.por_fecha(datetime.date.fromisoformat(f)).horas
                      for f in fs) for fs in self.asign.area.values()]
         media = sum(horas) // len(horas)
-        # la reserva de bolsa sin días seguidos puede costar 1–2 celdas
-        self.assertAlmostEqual(media, 1460, delta=15)
+        # la reserva de bolsa sin días seguidos puede costar 1–2 celdas de 24 h
+        self.assertAlmostEqual(media, 1460, delta=2 * 24 / len(horas))
 
     def test_cuotas_informe(self):
         self.assertEqual(self.cuotas.festivos, 2)

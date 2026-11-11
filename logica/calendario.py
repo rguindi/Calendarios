@@ -9,7 +9,7 @@ precargadas), produce la estructura de días del año con:
 - horas de la celda según §3.1 del PLAN.md:
     festivo 24 h  ·  sábado/domingo no festivo 24 h  ·  laborable 17 h.
 
-Los festivos ESPECIALES (1/1, Jue–Dom de Semana Santa, 24/12, 25/12 y 31/12)
+Los festivos ESPECIALES (1/1, Jueves y Viernes Santo, 24/12, 25/12 y 31/12)
 se derivan del domingo de Pascua (algoritmo de Butcher) — nunca fijados.
 """
 
@@ -52,10 +52,10 @@ def domingo_pascua(anio: int) -> datetime.date:
 
 
 def festivos_especiales(anio: int) -> set[datetime.date]:
-    """1/1, Semana Santa (jue–dom de Pascua), 24, 25 y 31/12 del año."""
+    """1/1, Jueves y Viernes Santo, 24, 25 y 31/12 del año."""
     pascua = domingo_pascua(anio)
     fechas = {datetime.date(anio, m, d) for (m, d) in ESPECIALES_FIJOS}
-    fechas.update(pascua - datetime.timedelta(days=o) for o in (3, 2, 1, 0))
+    fechas.update(pascua - datetime.timedelta(days=o) for o in (3, 2))
     return {f for f in fechas if f.year == anio}
 
 
@@ -100,6 +100,14 @@ class Dia:
     def es_s_festivo(self) -> bool:
         """Sábado-festivo: cuenta en la cuota de sábados (R13/D11), no en f."""
         return self.festivo and self.es_sabado
+
+    @property
+    def grupo_especial(self) -> str | None:
+        """Grupo del festivo especial: 'NAV' (1/1, 24, 25 y 31/12), 'SS'
+        (Semana Santa) o None si el día no es especial."""
+        if not (self.festivo and self.especial):
+            return None
+        return "NAV" if (self.fecha.month, self.fecha.day) in ESPECIALES_FIJOS else "SS"
 
     def categoria_24h(self) -> str:
         """Clave del contador de horas: festivo / sábado / domingo."""
@@ -163,6 +171,27 @@ class Calendario:
         if clave == "LMX":
             return sum(1 for dd in self.dias if dd.weekday <= 2 and not dd.festivo)
         raise KeyError(clave)
+
+    def celdas_equipo_especiales(self, modulos: int) -> dict[datetime.date, int]:
+        """Celdas de EQUIPO de cada festivo especial (mitad/mitad, R12).
+
+        Con 2 módulos, 1 celda de equipo por día y la otra es de área. Con 1
+        módulo, los días de cada grupo alternan equipo/área empezando por
+        equipo; los sábados y jueves especiales son siempre de equipo (pool S
+        y su pareja sábado→jueves, R13).
+        """
+        salida: dict[datetime.date, int] = {}
+        for grupo in ("NAV", "SS"):
+            turno = 0
+            for dd in self.dias:
+                if dd.grupo_especial != grupo:
+                    continue
+                if modulos == 2 or dd.es_sabado or dd.es_jueves:
+                    salida[dd.fecha] = 1
+                else:
+                    salida[dd.fecha] = 1 if turno == 0 else 0
+                    turno ^= 1
+        return salida
 
     def dias_de(self, clave: str) -> list[Dia]:
         """Días que forman el pool de una categoría del solver:

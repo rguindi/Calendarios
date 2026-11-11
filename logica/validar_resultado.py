@@ -64,6 +64,26 @@ def validar_resultado(cal: Calendario, asign: Asignacion, cuotas: Cuotas,
         if ocupadas > modulos:
             fallos.append(f"{dd.fecha}: {ocupadas} ocupaciones para {modulos} celdas")
 
+    # --- festivos especiales (R11/R12): mitad equipo, mitad área ----------------
+    plan_esp = cal.celdas_equipo_especiales(modulos)
+    grupos_de: dict[str, set[str]] = {}
+    for dd in cal.dias:
+        if dd.grupo_especial is None:
+            continue
+        de_eq = [n for n, fs in eq_n.items() if dd.fecha in fs]
+        de_ar = [n for n, fs in ar_n.items() if dd.fecha in fs]
+        if len(de_eq) > plan_esp[dd.fecha]:
+            fallos.append(f"{dd.fecha}: {len(de_eq)} de equipo en festivo especial "
+                          f"(máximo {plan_esp[dd.fecha]})")
+        if len(de_ar) > modulos - plan_esp[dd.fecha]:
+            fallos.append(f"{dd.fecha}: {len(de_ar)} de área en festivo especial "
+                          f"(máximo {modulos - plan_esp[dd.fecha]})")
+        for n in de_eq:
+            grupos_de.setdefault(n, set()).add(dd.grupo_especial)
+    for n, grupos in grupos_de.items():
+        if len(grupos) > 1:
+            fallos.append(f"{n}: de equipo en Navidad y en Semana Santa (R12)")
+
     # --- cuotas del equipo (mismo criterio de cómputo que el solver) ------------
     estados: dict[str, Estado] = {}
     for n, fs in eq_n.items():

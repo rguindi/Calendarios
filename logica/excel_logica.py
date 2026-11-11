@@ -18,6 +18,8 @@ import collections
 import io
 from dataclasses import dataclass
 
+from config.parametros import CAMPOS_NUMERICOS
+
 from .calendario import Calendario
 from .cuotas import factibilidad
 from .festivos_precarga import mezclar
@@ -25,6 +27,8 @@ from .generador import GeneradorExcel
 from .solver import categoria_dia, resolver_plan
 from .validar_resultado import validar_resultado
 from .verificar_libro import verificar_libro
+
+MINIMOS = {campo.clave: campo.minimo for campo in CAMPOS_NUMERICOS}
 
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
          "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -104,12 +108,12 @@ def validar(parametros: dict) -> str | None:
     # --- plantilla -----------------------------------------------------------
     n_eq = _coercion_int(parametros.get("enfermeras", 0)) or 0
     n_ar = _coercion_int(parametros.get("enfermeras_area", 0)) or 0
-    if n_eq < 0:
-        return "El número de enfermeras de equipo no puede ser negativo."
-    if n_ar < 0:
-        return "El número de enfermeras de área no puede ser negativo."
-    if n_eq == 0 and n_ar == 0:
-        return "Introduce al menos una enfermera (de equipo o de área)."
+    if n_eq < MINIMOS["enfermeras"]:
+        return (f"Se necesitan al menos {MINIMOS['enfermeras']} enfermeras de equipo "
+                f"(recibido: {n_eq}).")
+    if n_ar < MINIMOS["enfermeras_area"]:
+        return (f"Se necesita al menos {MINIMOS['enfermeras_area']} enfermera de área "
+                f"(recibido: {n_ar}).")
 
     # --- módulos de guardia --------------------------------------------------
     modulos = _coercion_int(parametros.get("modulos_guardia", 0))
@@ -117,10 +121,10 @@ def validar(parametros: dict) -> str | None:
         return "Los módulos de guardia deben ser 1 o 2."
 
     # --- horas ---------------------------------------------------------------
-    for clave in ("horas_equipo", "horas_area"):
+    for clave, etiqueta in (("horas_equipo", "equipo"), ("horas_area", "área")):
         horas = _coercion_int(parametros.get(clave, 0))
-        if horas is None or horas < 0:
-            return "Las horas objetivo no pueden ser negativas."
+        if horas is None or horas < 1:
+            return f"Las horas objetivo de {etiqueta} deben ser al menos 1."
 
     # --- festivos ------------------------------------------------------------
     festivos = _leer_fechas(parametros.get("festivos", []))

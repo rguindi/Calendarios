@@ -132,8 +132,14 @@ class CeldasFestivasEquipo:
         self.modulos = modulos
         self.total_celdas = 0
         self._celdas: list[tuple] = []          # (fecha, índice de celda 0..m-1)
+        especiales = cal.celdas_equipo_especiales(modulos)
         turno = 0                                # alterna m=1 desde equipo
         for dd in cal.dias_de("F"):
+            if dd.grupo_especial is not None:
+                if especiales[dd.fecha]:
+                    self.total_celdas += 1
+                    self._celdas.append((dd.fecha, 0))
+                continue
             if modulos == 2:
                 self.total_celdas += 1
                 self._celdas.append((dd.fecha, 0))
